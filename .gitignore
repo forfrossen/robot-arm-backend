@@ -15,6 +15,7 @@
 !.yarn/versions
 node_modules
 package-lock.json
+yarn.lock
 
 # Logs
 yarn-debug.log*

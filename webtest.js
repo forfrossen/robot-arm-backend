@@ -5,13 +5,21 @@ const io = new Server(3001, {
   },
 });
 
-const { Board, Servo } = require("johnny-five");
+const { Board, Servo, Servos, Animation } = require("johnny-five");
 
 const board = new Board();
 
 const controller = "PCA9685";
+const ServoArray = [
+  "baseTurner",
+  "shoulder",
+  "elbow",
+  "wrist",
+  "wristTurner",
+  "gripper",
+];
 
-var Servos = {
+var MyServos = {
   baseTurner: {},
   shoulder: {},
   elbow: {},
@@ -21,60 +29,106 @@ var Servos = {
 };
 
 board.on("ready", () => {
-  console.log("Connected");
+  console.log("Board connected");
 
-  Servos.baseTurner = new Servo({
+  MyServos.baseTurner = new Servo({
     controller,
-    //fps: 1,
     range: [0, 180],
     pin: 0,
     startAt: 180,
   });
 
-  Servos.shoulder = new Servo({
+  MyServos.shoulder = new Servo({
     controller,
-    inverted: true,
-    //fps: 1,
     range: [30, 180],
+    isInverted: false,
     startAt: 135,
     pin: 1,
   });
 
-  Servos.elbow = new Servo({
+  MyServos.elbow = new Servo({
     controller,
-    //fps: 1,
-    range: [180, 0],
-    inverted: true,
-    startAt: 130,
+    range: [0, 180],
+    isInverted: true,
+    startAt: 50,
     pin: 2,
   });
 
-  Servos.wrist = new Servo({
+  MyServos.wrist = new Servo({
     controller,
-    //fps: 1,
     range: [0, 180],
     inverted: true,
-    startAt: 90,
+    startAt: 110,
     pin: 3,
   });
 
-  Servos.wristTurner = new Servo({
+  MyServos.wristTurner = new Servo({
     controller,
-    //fps: 1,
     range: [0, 180],
     startAt: 150,
     pin: 4,
     pin: 4,
   });
 
-  Servos.gripper = new Servo({
+  MyServos.gripper = new Servo({
     controller,
-    //fps: 1,
-    range: [115, 180],
-    startAt: 115,
+    //range: [0, 180],
+    startAt: 143,
     pin: 5,
-    inverted: true,
+    inverted: false,
   });
+
+  const joints = new Servos([
+    MyServos.shoulder,
+    MyServos.elbow,
+    MyServos.wrist,
+  ]);
+  var animation = new Animation(joints);
+  const animationMoveStep = 60;
+  // Create an animation segment object
+  animation
+    .enqueue({
+      duration: 1500,
+      cuePoints: [0, 0.5, 1.0],
+      keyFrames: [
+        [
+          { degrees: MyServos.shoulder.startAt },
+          { degrees: MyServos.shoulder.startAt - animationMoveStep },
+          { degrees: MyServos.shoulder.startAt },
+        ],
+        [
+          { degrees: MyServos.elbow.startAt },
+          { degrees: MyServos.elbow.startAt + animationMoveStep },
+          { degrees: MyServos.elbow.startAt },
+        ],
+        [
+          { degrees: MyServos.wrist.startAt },
+          { degrees: MyServos.wrist.startAt + animationMoveStep },
+          { degrees: MyServos.wrist.startAt },
+        ],
+      ],
+    })
+    .enqueue({
+      duration: 1000,
+      cuePoints: [0, 0.5, 1.0],
+      keyFrames: [
+        [
+          { degrees: MyServos.shoulder.startAt },
+          { degrees: MyServos.shoulder.startAt + animationMoveStep },
+          { degrees: MyServos.shoulder.startAt },
+        ],
+        [
+          { degrees: MyServos.elbow.startAt },
+          { degrees: MyServos.elbow.startAt - animationMoveStep },
+          { degrees: MyServos.elbow.startAt },
+        ],
+        [
+          { degrees: MyServos.wrist.startAt },
+          { degrees: MyServos.wrist.startAt - animationMoveStep },
+          { degrees: MyServos.wrist.startAt },
+        ],
+      ],
+    });
 
   setupSocket();
   /*
@@ -104,18 +158,36 @@ board.on("ready", () => {
   */
 });
 
+const sendServoPosition = (socket, servoName) => {
+  console.log(`sending for ${servoName} - ${MyServos[servoName].position}`);
+  socket.emit("servoPosition", {
+    servoName: servoName,
+    pos: MyServos[servoName].position,
+  });
+};
+
 // on a socket connection
 const setupSocket = () =>
   io.on("connection", (socket) => {
     // new or unrecoverable session
     console.log("New Socket Session created");
-    socket.emit("news", { hello: "world" });
+
+    socket.on("disconnect", () => socket.disconnect());
+
+    ServoArray.forEach((servoName) => {
+      sendServoPosition(socket, servoName);
+    });
 
     socket.on("servo", function (data) {
-      console.log(`Incoming socket data for ${data.name} - ${data.pos}`);
+      console.log(`Incoming socket data for ${data.servoName} - ${data.pos}`);
       if (board.isReady) {
-        if (Servos[data.name]) {
-          Servos[data.name].to(data.pos);
+        if (MyServos[data.servoName]) {
+          console.log(
+            `Moving Servo ${data.servoName} from ${
+              MyServos[data.servoName].position
+            } to Position ${data.pos}`
+          );
+          MyServos[data.servoName].to(data.pos, 1000);
         }
       }
     });
